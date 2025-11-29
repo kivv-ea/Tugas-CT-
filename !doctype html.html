@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Kombinasi Keramik 2×N dengan Domino 2×1</title>
+  <style>
+    body { font-family: Inter, system-ui, Arial; padding: 18px; background:#f6f8fb; color:#0b213f; }
+    h1 { margin: 0 0 8px 0; font-size: 20px; }
+    p { margin: 6px 0 12px 0; color:#243447; }
+    .controls { display:flex; gap:8px; align-items:center; margin-bottom:12px; }
+    input[type=number] { width:72px; padding:6px; border-radius:6px; border:1px solid #c8d3dd; }
+    button { padding:8px 10px; background:#0b74ff; color:white; border:0; border-radius:8px; cursor:pointer; }
+    button:disabled { opacity:.5; cursor:default; }
+    #summary { margin: 10px 0 16px 0; font-weight:600; }
+    .solutions { display:flex; gap:12px; flex-wrap:wrap; }
+    .sol { background:white; padding:8px; border-radius:10px; box-shadow:0 6px 18px rgba(13,30,50,.06); width:180px; }
+    .grid { display:grid; gap:4px; background:transparent; justify-content:center; }
+    .cell { width:28px; height:28px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:12px; color:#041022; box-sizing:border-box; }
+    .legend { font-size:13px; margin-top:8px; color:#334a63; }
+    .controls small { color:#334a63; margin-left:8px; }
+    .nav { margin-top:10px; display:flex; gap:6px; align-items:center; }
+    .bigview { margin-top:18px; padding:12px; background:white; border-radius:12px; box-shadow:0 10px 30px rgba(8,20,40,.05); }
+    .bigview .grid .cell { width:44px; height:44px; font-size:14px; border-radius:8px; }
+    .footer { margin-top:18px; color:#526a81; font-size:13px; }
+    .count { color:#0b74ff; }
+  </style>
+</head>
+<body>
+  <h1>Kombinasi pemasangan keramik (lantai 2×N) — domino 2×1</h1>
+  <p>Contoh default: <strong>lantai 2×4</strong> dan ubin domino 2×1. Program ini menghitung semua cara menutup papan dan menampilkan visual tiap konfigurasi.</p>
+
+  <div class="controls">
+    <label>Lebar N (papan 2 × N): <input id="inputN" type="number" min="1" max="12" value="4" /></label>
+    <button id="runBtn">Hitung & Visualisasikan</button>
+    <small>Max N disarankan ≤ 12 (kombinasi tumbuh cepat).</small>
+  </div>
+
+  <div id="summary">Hasil: <span id="count" class="count">—</span> kombinasi</div>
+
+  <div class="nav">
+    <button id="prev" disabled>◀ Sebelumnya</button>
+    <button id="next" disabled>Berikutnya ▶</button>
+    <div style="margin-left:8px">Menampilkan solusi <span id="currentIdx">0</span> dari <span id="totalIdx">0</span></div>
+  </div>
+
+  <div class="bigview" id="bigview" aria-live="polite">
+    <!-- big visual of current solution -->
+  </div>
+
+  <div style="margin-top:16px;">
+    <strong>Semua solusi (thumbnail):</strong>
+    <div class="solutions" id="solutionsList"></div>
+  </div>
+
+  <div class="footer">
+    <strong>Algoritma (singkat):</strong>
+    <ol>
+      <li>Representasikan papan 2×N sebagai array 2×N (2 baris, N kolom).</li>
+      <li>Lakukan backtracking: cari sel kosong pertama (scan baris 0→1, kolom 0→N−1).</li>
+      <li>Coba tempatkan domino vertical (menutupi dua baris pada kolom itu) jika muat; rekursi.</li>
+      <li>Coba tempatkan domino horizontal (menutupi dua kolom pada baris yang sama) jika muat; rekursi.</li>
+      <li>Jika semua sel terisi, simpan solusi. Kembali (backtrack) untuk cari solusi lain.</li>
+    </ol>
+    Untuk papan 2×N jumlah solusi mengikuti deret Fibonacci (jumlah tilings untuk 2×N = F_{N+1}), misal N=4 → 5 solusi.
+  </div>
+
+<script>
+/*
+  Implementasi enumerasi tilings untuk papan 2 x N menggunakan backtracking.
+  Representasi: board[row][col] dengan 2 baris (row=0,1) dan N kolom (col=0..N-1).
+  Domino ditandai dengan id integer (>0) untuk setiap domino (memudahkan visual).
+*/
+
+function enumerateTilings(N) {
+  const rows = 2;
+  const board = Array.from({length: rows}, () => Array(N).fill(0));
+  const solutions = [];
+
+  let nextDominoId = 1;
+
+  function findFirstEmpty() {
+    for (let r=0;r<rows;r++){
+      for (let c=0;c<N;c++){
+        if (board[r][c] === 0) return [r,c];
+      }
+    }
+    return null;
+  }
+
+  function placeVertical(r,c,id) {
+    // vertical only possible when r==0 and r+1 < rows
+    board[r][c] = id;
+    board[r+1][c] = id;
+  }
+  function unplaceVertical(r,c) {
+    const id = board[r][c];
+    board[r][c] = 0;
+    board[r+1][c] = 0;
+  }
+  function placeHorizontal(r,c,id) {
+    board[r][c] = id;
+    board[r][c+1] = id;
+  }
+  function unplaceHorizontal(r,c) {
+    board[r][c] = 0;
+    board[r][c+1] = 0;
+  }
+
+  function copyBoard() {
+    return board.map(row => row.slice());
+  }
+
+  function backtrack() {
+    const pos = findFirstEmpty();
+    if (!pos) {
+      // all filled -> save a deep copy
+      solutions.push(copyBoard());
+      return;
+    }
+    const [r,c] = pos;
+    // Try vertical: can place if r==0 and both cells free
+    if (r === 0 && board[0][c] === 0 && board[1][c] === 0) {
+      const id = nextDominoId++;
+      placeVertical(0,c,id);
+      backtrack();
+      unplaceVertical(0,c);
+      nextDominoId--;
+    }
+    // Try horizontal: can place if c+1 < N and both cells free in same row
+    if (c+1 < N && board[r][c] === 0 && board[r][c+1] === 0) {
+      const id = nextDominoId++;
+      placeHorizontal(r,c,id);
+      backtrack();
+      unplaceHorizontal(r,c);
+      nextDominoId--;
+    }
+  }
+
+  backtrack();
+  return solutions;
+}
+
+/* UI rendering helpers */
+function randomPalette(seed, count) {
+  // deterministic-ish palette based on seed: create `count` colors
+  const out = [];
+  let h = (seed * 97) % 360;
+  for (let i=0;i<count;i++){
+    out.push(`hsl(${(h + i*37) % 360} 72% 78%)`);
+  }
+  return out;
+}
+
+function renderSmallSolution(board, container) {
+  const rows = board.length;
+  const cols = board[0].length;
+  const grid = document.createElement('div');
+  grid.className = 'grid';
+  grid.style.gridTemplateColumns = `repeat(${cols}, auto)`;
+  grid.style.width = '100%';
+  // palette: colors per domino id
+  const maxId = Math.max(...board.flat());
+  const palette = randomPalette(maxId + 3, maxId + 3);
+
+  for (let r=0;r<rows;r++){
+    for (let c=0;c<cols;c++){
+      const cid = board[r][c];
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.style.border = '1px solid rgba(10,20,40,.06)';
+      cell.style.background = cid ? palette[cid] : '#ffffff';
+      if (cid) {
+        cell.textContent = cid;
+      } else {
+        cell.textContent = '';
+      }
+      grid.appendChild(cell);
+    }
+  }
+  container.appendChild(grid);
+}
+
+function renderBigSolution(board, container) {
+  container.innerHTML = '';
+  const rows = board.length;
+  const cols = board[0].length;
+  const grid = document.createElement('div');
+  grid.className = 'grid';
+  grid.style.gridTemplateColumns = `repeat(${cols}, auto)`;
+  grid.style.margin = 'auto';
+  // palette based on max id
+  const maxId = Math.max(...board.flat());
+  const palette = randomPalette(maxId + 3, maxId + 3);
+
+  for (let r=0;r<rows;r++){
+    for (let c=0;c<cols;c++){
+      const cid = board[r][c];
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.style.border = '2px solid rgba(8,18,36,.06)';
+      cell.style.background = cid ? palette[cid] : '#fff';
+      // show id in smaller font
+      cell.textContent = cid ? cid : '';
+      grid.appendChild(cell);
+    }
+  }
+  container.appendChild(grid);
+
+  // legend (domino ids -> color)
+  const legend = document.createElement('div');
+  legend.className = 'legend';
+  legend.style.display = 'flex';
+  legend.style.marginTop = '8px';
+  legend.style.flexWrap = 'wrap';
+  legend.style.gap = '6px';
+  for (let id=1; id<=maxId; id++){
+    const sw = document.createElement('div');
+    sw.style.display = 'flex';
+    sw.style.alignItems = 'center';
+    sw.style.gap = '6px';
+    sw.innerHTML = `<div style="width:18px;height:14px;border-radius:4px;background:${palette[id]};border:1px solid rgba(8,18,36,.06)"></div><div style="font-size:13px;color:#243447">#${id}</div>`;
+    legend.appendChild(sw);
+  }
+  container.appendChild(legend);
+}
+
+/* Wiring UI */
+const runBtn = document.getElementById('runBtn');
+const inputN = document.getElementById('inputN');
+const countEl = document.getElementById('count');
+const solutionsList = document.getElementById('solutionsList');
+const bigview = document.getElementById('bigview');
+const prevBtn = document.getElementById('prev');
+const nextBtn = document.getElementById('next');
+const currentIdxEl = document.getElementById('currentIdx');
+const totalIdxEl = document.getElementById('totalIdx');
+
+let currentSolutions = [];
+let currentIndex = 0;
+
+function showIndex(i) {
+  if (!currentSolutions.length) return;
+  currentIndex = (i + currentSolutions.length) % currentSolutions.length;
+  renderBigSolution(currentSolutions[currentIndex], bigview);
+  currentIdxEl.textContent = (currentIndex + 1);
+  totalIdxEl.textContent = currentSolutions.length;
+  prevBtn.disabled = currentSolutions.length <= 1;
+  nextBtn.disabled = currentSolutions.length <= 1;
+}
+
+runBtn.addEventListener('click', () => {
+  const N = parseInt(inputN.value,10);
+  if (!(N >= 1 && N <= 12)) {
+    alert('Masukkan N antara 1 dan 12.');
+    return;
+  }
+  runBtn.disabled = true;
+  runBtn.textContent = 'Menghitung...';
+  // compute
+  setTimeout(() => {
+    const sols = enumerateTilings(N);
+    currentSolutions = sols;
+    countEl.textContent = sols.length + ` (papan 2×${N})`;
+    // show thumbnails
+    solutionsList.innerHTML = '';
+    sols.forEach((b, idx) => {
+      const box = document.createElement('div');
+      box.className = 'sol';
+      box.style.cursor = 'pointer';
+      box.title = 'Klik untuk lihat lebih besar';
+      const title = document.createElement('div');
+      title.style.fontSize = '13px';
+      title.style.fontWeight = 700;
+      title.style.marginBottom = '6px';
+      title.textContent = `Solusi ${idx+1}`;
+      box.appendChild(title);
+      renderSmallSolution(b, box);
+      box.addEventListener('click', () => {
+        showIndex(idx);
+        window.scrollTo({top:0,behavior:'smooth'});
+      });
+      solutionsList.appendChild(box);
+    });
+    // show first
+    if (sols.length > 0) {
+      showIndex(0);
+    } else {
+      bigview.innerHTML = '<div>Tidak ada solusi.</div>';
+      prevBtn.disabled = true;
+      nextBtn.disabled = true;
+      currentIdxEl.textContent = 0;
+      totalIdxEl.textContent = 0;
+    }
+    runBtn.disabled = false;
+    runBtn.textContent = 'Hitung & Visualisasikan';
+  }, 80); // tiny delay so UI updates
+});
+
+prevBtn.addEventListener('click', () => {
+  showIndex(currentIndex - 1);
+});
+nextBtn.addEventListener('click', () => {
+  showIndex(currentIndex + 1);
+});
+
+// auto-run initial
+document.addEventListener('DOMContentLoaded', () => {
+  runBtn.click();
+});
+</script>
+</body>
+</html>
